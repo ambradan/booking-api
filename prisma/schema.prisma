@@ -22,11 +22,12 @@ model Event {
 }
 
 model Booking {
-  id            String        @id @default(uuid())
-  customerEmail String        @map("customer_email")
-  status        BookingStatus @default(CONFIRMED)
-  createdAt     DateTime      @default(now()) @map("created_at")
-  items         BookingItem[]
+  id              String        @id @default(uuid())
+  customerEmail   String        @map("customer_email")
+  status          BookingStatus @default(CONFIRMED)
+  idempotencyKey  String?       @unique @map("idempotency_key")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  items           BookingItem[]
 
   @@map("bookings")
 }
