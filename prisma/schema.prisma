@@ -1,0 +1,49 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Event {
+  id             String        @id @default(uuid())
+  name           String
+  date           DateTime
+  venue          String
+  totalSeats     Int           @map("total_seats")
+  availableSeats Int           @map("available_seats")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+  bookingItems   BookingItem[]
+
+  @@map("events")
+}
+
+model Booking {
+  id            String        @id @default(uuid())
+  customerEmail String        @map("customer_email")
+  status        BookingStatus @default(CONFIRMED)
+  createdAt     DateTime      @default(now()) @map("created_at")
+  items         BookingItem[]
+
+  @@map("bookings")
+}
+
+model BookingItem {
+  id        String  @id @default(uuid())
+  bookingId String  @map("booking_id")
+  eventId   String  @map("event_id")
+  quantity  Int
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  event     Event   @relation(fields: [eventId], references: [id])
+
+  @@unique([bookingId, eventId])
+  @@map("booking_items")
+}
+
+enum BookingStatus {
+  CONFIRMED
+  CANCELLED
+}

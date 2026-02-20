@@ -1,0 +1,83 @@
+### Health Check
+GET http://localhost:3000/health
+
+###
+
+### List Events
+GET http://localhost:3000/api/v1/events
+
+###
+
+### Get Single Event (replace with real ID from seed)
+GET http://localhost:3000/api/v1/events/{{eventId}}
+
+###
+
+### Create Booking — Single Event
+POST http://localhost:3000/api/v1/bookings
+Content-Type: application/json
+
+{
+  "customerEmail": "ambra@example.com",
+  "items": [
+    { "eventId": "{{eventId}}", "quantity": 2 }
+  ]
+}
+
+###
+
+### Create Booking — Multi-Event
+POST http://localhost:3000/api/v1/bookings
+Content-Type: application/json
+
+{
+  "customerEmail": "ambra@example.com",
+  "items": [
+    { "eventId": "{{eventId1}}", "quantity": 3 },
+    { "eventId": "{{eventId2}}", "quantity": 1 }
+  ]
+}
+
+###
+
+### Create Booking — Should FAIL (quantity > 3)
+POST http://localhost:3000/api/v1/bookings
+Content-Type: application/json
+
+{
+  "customerEmail": "fail@example.com",
+  "items": [
+    { "eventId": "{{eventId}}", "quantity": 4 }
+  ]
+}
+
+###
+
+### List Bookings
+GET http://localhost:3000/api/v1/bookings
+
+###
+
+### List Bookings — Filter by email
+GET http://localhost:3000/api/v1/bookings?email=ambra@example.com
+
+###
+
+### Get Single Booking
+GET http://localhost:3000/api/v1/bookings/{{bookingId}}
+
+###
+
+### Cancel Booking
+POST http://localhost:3000/api/v1/bookings/{{bookingId}}/cancel
+
+###
+
+### Concurrency Test — Run these two simultaneously in separate terminals:
+# Terminal 1:
+# curl -X POST http://localhost:3000/api/v1/bookings -H "Content-Type: application/json" -d '{"customerEmail":"race-a@test.com","items":[{"eventId":"CLASSICAL_CONCERT_ID","quantity":2}]}'
+#
+# Terminal 2:
+# curl -X POST http://localhost:3000/api/v1/bookings -H "Content-Type: application/json" -d '{"customerEmail":"race-b@test.com","items":[{"eventId":"CLASSICAL_CONCERT_ID","quantity":2}]}'
+#
+# Expected: ONE 201, ONE 409. Never both 201.

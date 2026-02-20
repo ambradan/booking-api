@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: booking-db
+    environment:
+      POSTGRES_USER: booking
+      POSTGRES_PASSWORD: booking_dev_pwd
+      POSTGRES_DB: booking_api
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U booking -d booking_api"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: booking-app
+    environment:
+      DATABASE_URL: "postgresql://booking:booking_dev_pwd@db:5432/booking_api?schema=public"
+      NODE_ENV: development
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+      - ./prisma:/app/prisma
+
+volumes:
+  pgdata:
