@@ -56,6 +56,22 @@ interface BookingResult {
   totalTickets: number;
 }
 
+/**
+ * Transaction configuration.
+ *
+ * TIMEOUT: 5 seconds. If a transaction takes longer (e.g. deadlock,
+ * slow query, network issue), it's rolled back automatically.
+ * Without this, a hung transaction holds row locks indefinitely.
+ *
+ * ISOLATION: ReadCommitted (PostgreSQL default). Sufficient for
+ * our use case because FOR UPDATE provides the serialization
+ * we need at the row level.
+ */
+const TRANSACTION_OPTIONS = {
+  timeout: 5000,
+  isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+} as const;
+
 export class BookingService {
   private notificationService: NotificationService;
 
@@ -81,8 +97,42 @@ export class BookingService {
    * for the same event are serialized at the database level.
    * This is the correct solution — not application-level mutexes,
    * not optimistic locking with retries.
+   *
+   * IDEMPOTENCY:
+   * If an idempotencyKey is provided, the service checks for an existing
+   * booking with that key before creating a new one. If found, returns
+   * the existing booking. This prevents duplicate bookings on client retry.
    */
-  async createBooking(input: CreateBookingInput): Promise<BookingResult> {
+  async createBooking(
+    input: CreateBookingInput,
+    idempotencyKey?: string
+  ): Promise<BookingResult> {
+    // Idempotency check: if key was seen before, return existing booking
+    if (idempotencyKey) {
+      const existing = await this.prisma.booking.findUnique({
+        where: { idempotencyKey },
+        include: { items: { include: { event: true } } },
+      });
+
+      if (existing) {
+        return {
+          id: existing.id,
+          customerEmail: existing.customerEmail,
+          status: existing.status,
+          createdAt: existing.createdAt,
+          items: existing.items.map((item) => ({
+            eventId: item.eventId,
+            eventName: item.event.name,
+            quantity: item.quantity,
+          })),
+          totalTickets: existing.items.reduce(
+            (sum, item) => sum + item.quantity,
+            0
+          ),
+        };
+      }
+    }
+
     const result = await this.prisma.$transaction(async (tx) => {
       // Phase 1: Lock and validate all events
       const eventDetails: Array<{
@@ -99,7 +149,7 @@ export class BookingService {
         >`
           SELECT id, name, available_seats
           FROM events
-          WHERE id = ${item.eventId}::uuid
+          WHERE id = ${item.eventId}
           FOR UPDATE
         `;
 
@@ -131,7 +181,7 @@ export class BookingService {
           UPDATE events
           SET available_seats = available_seats - ${detail.requestedQuantity},
               updated_at = NOW()
-          WHERE id = ${detail.id}::uuid
+          WHERE id = ${detail.id}
         `;
       }
 
@@ -139,6 +189,7 @@ export class BookingService {
       const booking = await tx.booking.create({
         data: {
           customerEmail: input.customerEmail,
+          ...(idempotencyKey && { idempotencyKey }),
           items: {
             create: input.items.map((item) => ({
               eventId: item.eventId,
@@ -155,7 +206,7 @@ export class BookingService {
         booking,
         eventDetails,
       };
-    });
+    }, TRANSACTION_OPTIONS);
 
     // Phase 4: Notification (outside transaction — fire and forget)
     const bookingResult: BookingResult = {
@@ -218,7 +269,7 @@ export class BookingService {
           UPDATE events
           SET available_seats = available_seats + ${item.quantity},
               updated_at = NOW()
-          WHERE id = ${item.eventId}::uuid
+          WHERE id = ${item.eventId}
         `;
       }
 
@@ -230,7 +281,7 @@ export class BookingService {
       });
 
       return updated;
-    });
+    }, TRANSACTION_OPTIONS);
 
     return {
       id: result.id,
