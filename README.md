@@ -29,7 +29,7 @@ SQLite lacks row-level locking. MongoDB lacks reliable multi-document transactio
 # Clone and start
 git clone <repo-url>
 cd booking-api
-cp .env.example .env
+cp .env.example .env   # Edit with your PostgreSQL connection string
 
 # Option 1: Docker (recommended)
 docker compose up -d
@@ -45,6 +45,18 @@ npm run dev
 ```
 
 The API will be available at `http://localhost:3000`.
+
+## API Documentation
+
+Interactive Swagger UI:
+
+```
+http://localhost:3000/docs
+```
+
+OpenAPI 3.0 JSON spec at `http://localhost:3000/docs/json`.
+
+All endpoints are documented with request/response schemas, error codes, and descriptions.
 
 ## API Reference
 
@@ -107,8 +119,10 @@ booking-api/
 │   ├── schema.prisma          # Data model
 │   ├── seed.ts                # Test data
 │   └── migrations/            # Versioned migrations
+├── scripts/
+│   └── concurrency-test.ts    # Stress test (see below)
 ├── src/
-│   ├── app.ts                 # Fastify app factory
+│   ├── app.ts                 # Fastify app factory + Swagger config
 │   ├── server.ts              # Entry point
 │   ├── plugins/
 │   │   └── prisma.ts          # DB connection plugin
@@ -118,11 +132,9 @@ booking-api/
 │   │   └── health.routes.ts   # GET /health
 │   ├── services/
 │   │   ├── booking.service.ts # Core business logic
-│   │   └── notification.service.ts  # Notification (simulated)
-│   ├── schemas/
-│   │   └── booking.schema.ts  # Zod validation
-│   └── __tests__/
-│       └── ...
+│   │   └── notification.service.ts  # Notification (Strategy pattern)
+│   └── schemas/
+│       └── booking.schema.ts  # Zod validation
 ├── docker-compose.yml
 ├── Dockerfile
 └── README.md
@@ -148,6 +160,40 @@ Timeline:
 
 No race condition. No overselling. Guaranteed by PostgreSQL row-level locking.
 
+### Concurrency Stress Test
+
+```bash
+npx tsx scripts/concurrency-test.ts
+```
+
+Fires 10 concurrent booking requests against an event with 2 available seats.
+Expected result: exactly 2 bookings succeed (201), 8 are rejected (409), 0 errors.
+Proves the `SELECT ... FOR UPDATE` locking prevents overselling under real concurrency.
+
+## Notification Service
+
+The booking system includes a notification service using the **Strategy pattern**. On successful booking, a notification is dispatched (fire-and-forget, outside the DB transaction).
+
+Currently implements a `ConsoleNotificationChannel` that logs to stdout. Adding email/SMS is a matter of implementing the `NotificationChannel` interface — no changes to booking logic required.
+
+## Resilience & Operational Features
+
+- **Transaction timeout** (5s) — prevents hung transactions from holding row locks indefinitely
+- **Idempotency-Key header** — optional header on POST /bookings; duplicate requests with the same key return the original booking instead of creating duplicates (safe client retry)
+- **Rate limiting** — 100 requests/minute per IP via @fastify/rate-limit
+- **X-Request-Id** — every response includes the request ID for log correlation
+
+## AI-Assisted Development
+
+This project uses structured guardrails for AI coding assistants:
+
+- `CLAUDE.md` — project context and constraints for Claude Code
+- `.cursor/rules/` — rules for Cursor IDE
+- `.github/copilot-instructions.md` — instructions for GitHub Copilot
+- `.futurecode/` — static analysis, blueprint, and project memory
+
+These files ensure AI tools respect the project's architecture decisions, naming conventions, and constraints. They are the equivalent of `.editorconfig` or `.eslintrc` for AI-assisted workflows.
+
 ## Testing
 
 ```bash
@@ -159,7 +205,7 @@ npm run test:coverage # Coverage report
 ## Development
 
 ```bash
-npm run dev           # Start with hot reload
+npm run dev           # Start with hot reload (http://localhost:3000)
 npm run typecheck     # Type check without emitting
 npm run lint          # Lint
 npm run db:studio     # Prisma Studio (DB GUI)
